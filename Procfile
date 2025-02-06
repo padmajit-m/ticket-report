@@ -1,1 +1,1 @@
-web: python app.py
+web: python3 ticket_report.py
