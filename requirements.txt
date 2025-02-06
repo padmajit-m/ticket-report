@@ -1,4 +1,7 @@
 streamlit
+python==3.10
+fastapi
+uvicorn
 pandas
 numpy
 xlrd
