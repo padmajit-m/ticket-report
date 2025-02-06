@@ -1,8 +1,5 @@
-streamlit
+
 fastapi
 uvicorn
-pandas
-numpy
-xlrd
-openpyxl
-xlsxwriter
+pandas==2.0.3
+requests==2.31.0
