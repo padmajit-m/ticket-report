@@ -25,15 +25,6 @@ if uploaded_file is not None:
     st.write(f"Existing entries till: {max_number}")
 
     # Demand fields pattern
-    field_labels = [
-        "Demand Number",
-        "Demand Date",
-        "Outstanding Balance",
-        "Principal Amount",
-        "Interest Amount",
-        "Emi Amount"
-    ]
-
     demand_fields = [
         "DEMAND-NUMBER",
         "DEMAND-DATE",
@@ -46,15 +37,9 @@ if uploaded_file is not None:
     # Extend demands till 365
     table = doc.tables[0]
     for i in range(max_number + 1, 366):
-        # Add label row
-        label_row = table.add_row()
-        for j, label in enumerate(field_labels):
-            label_row.cells[j].text = label
-
-        # Add placeholder row
-        placeholder_row = table.add_row()
+        row = table.add_row()
         for j, field in enumerate(demand_fields):
-            placeholder_row.cells[j].text = f"$DEMANDS-{i}-{field}$"
+            row.cells[j].text = f"$DEMANDS-{i}-{field}$"
 
     # Save into memory buffer
     buffer = io.BytesIO()
