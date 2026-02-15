@@ -8,29 +8,44 @@ st.set_page_config(page_title="DA Automation Engine", layout="wide")
 st.title("📊 DA Automation Engine")
 st.markdown("End-to-End DA Pool Processing | KiCredit")
 
-# -------------------------
-# Helper Functions
-# -------------------------
+# ---------------------------------------------------
+# Utility Functions
+# ---------------------------------------------------
+
+def normalize_columns(df):
+    df.columns = (
+        df.columns
+        .str.strip()
+        .str.lower()
+        .str.replace(" ", "_")
+        .str.replace("-", "_")
+    )
+    return df
+
 
 def preprocess_file(df):
 
-    # Rename based on Dar DA file
-    df = df.rename(columns={
-        "PartnerApplicationID": "partner_loan_id",
-        "PAN NO": "pan",
-        "Mobile No.": "mobile",
-        "Loan Amount applied for (INR)": "loan_amount",
-        "State": "state",
-        "Bank Account No": "bank_account_no",
-        "KCPL Share": "kcpl_share_pct",
-        "Partner Share": "partner_share_pct"
-    })
+    df = normalize_columns(df)
 
-    # Create borrower name if split
-    if "Applicant First Name" in df.columns:
+    rename_map = {
+        "partnerapplicationid": "partner_loan_id",
+        "partner_application_id": "partner_loan_id",
+        "pan_no": "pan",
+        "mobile_no.": "mobile",
+        "mobile_no": "mobile",
+        "loan_amount_applied_for_(inr)": "loan_amount",
+        "loan_amount": "loan_amount",
+        "bank_account_no": "bank_account_no",
+        "kcpl_share": "kcpl_share_pct",
+        "partner_share": "partner_share_pct"
+    }
+
+    df = df.rename(columns=rename_map)
+
+    if "applicant_first_name" in df.columns:
         df["borrower_name"] = (
-            df["Applicant First Name"].fillna("") + " " +
-            df.get("Applicant Last Name", "").fillna("")
+            df["applicant_first_name"].fillna("") + " " +
+            df.get("applicant_last_name", "").fillna("")
         )
 
     return df
@@ -42,8 +57,7 @@ def validate_flat_file(df):
         "partner_loan_id",
         "pan",
         "mobile",
-        "loan_amount",
-        "state"
+        "loan_amount"
     ]
 
     df["error_remark"] = ""
@@ -73,14 +87,35 @@ def validate_flat_file(df):
 
 def assign_region(df):
 
-    south = ["Tamil Nadu", "Karnataka", "Kerala", "Andhra Pradesh"]
-    north = ["Delhi", "Punjab", "Haryana"]
-    west = ["Maharashtra", "Gujarat"]
-    east = ["West Bengal", "Odisha"]
+    possible_state_cols = [
+        "state",
+        "state_name",
+        "borrower_state",
+        "customer_state"
+    ]
+
+    state_col = None
+
+    for col in possible_state_cols:
+        if col in df.columns:
+            state_col = col
+            break
+
+    if state_col is None:
+        df["region"] = "Unknown"
+        return df
+
+    south = ["tamil nadu", "karnataka", "kerala", "andhra pradesh"]
+    north = ["delhi", "punjab", "haryana"]
+    west = ["maharashtra", "gujarat"]
+    east = ["west bengal", "odisha"]
 
     def region_map(state):
         if pd.isna(state):
             return "Unknown"
+
+        state = str(state).strip().lower()
+
         if state in south:
             return "South"
         elif state in north:
@@ -92,7 +127,8 @@ def assign_region(df):
         else:
             return "Other"
 
-    df["region"] = df["state"].apply(region_map)
+    df["region"] = df[state_col].apply(region_map)
+
     return df
 
 
@@ -100,8 +136,9 @@ def run_dedupe(df):
 
     df["dedupe_status"] = "No Match"
 
-    duplicated_pan = df[df.duplicated("pan", keep=False)]
-    df.loc[df["pan"].isin(duplicated_pan["pan"]), "dedupe_status"] = "Potential Match"
+    if "pan" in df.columns:
+        duplicated_pan = df[df.duplicated("pan", keep=False)]
+        df.loc[df["pan"].isin(duplicated_pan["pan"]), "dedupe_status"] = "Potential Match"
 
     return df
 
@@ -109,28 +146,38 @@ def run_dedupe(df):
 def generate_scrub_file(df):
 
     scrub_df = df.copy()
-    scrub_df["Equifax_ID"] = scrub_df["pan"].apply(
-        lambda x: hashlib.md5(str(x).encode()).hexdigest()
-    )
 
-    scrub_df = scrub_df[
-        ["partner_loan_id", "borrower_name", "pan", "mobile", "loan_amount"]
+    if "pan" in scrub_df.columns:
+        scrub_df["equifax_id"] = scrub_df["pan"].apply(
+            lambda x: hashlib.md5(str(x).encode()).hexdigest()
+        )
+
+    scrub_columns = [
+        col for col in [
+            "partner_loan_id",
+            "borrower_name",
+            "pan",
+            "mobile",
+            "loan_amount"
+        ] if col in scrub_df.columns
     ]
+
+    scrub_df = scrub_df[scrub_columns]
 
     return scrub_df
 
 
 def simulate_kiscore(df):
 
-    df["KiScore"] = np.random.randint(550, 800, len(df))
-    df["KiScore_Band"] = np.where(df["KiScore"] >= 650, "Accept", "Reject")
+    df["kiscore"] = np.random.randint(550, 800, len(df))
+    df["kiscore_band"] = np.where(df["kiscore"] >= 650, "Accept", "Reject")
 
     return df
 
 
-# -------------------------
+# ---------------------------------------------------
 # Navigation
-# -------------------------
+# ---------------------------------------------------
 
 menu = st.sidebar.radio(
     "Navigation",
@@ -141,9 +188,9 @@ if "data" not in st.session_state:
     st.session_state.data = None
 
 
-# -------------------------
+# ---------------------------------------------------
 # Upload Section
-# -------------------------
+# ---------------------------------------------------
 
 if menu == "Upload Flat File":
 
@@ -178,9 +225,9 @@ if menu == "Upload Flat File":
         st.dataframe(valid_df.head())
 
 
-# -------------------------
-# Dedupe
-# -------------------------
+# ---------------------------------------------------
+# Dedupe Section
+# ---------------------------------------------------
 
 elif menu == "Dedupe":
 
@@ -202,9 +249,9 @@ elif menu == "Dedupe":
         st.warning("Upload file first.")
 
 
-# -------------------------
+# ---------------------------------------------------
 # Scrub Generation
-# -------------------------
+# ---------------------------------------------------
 
 elif menu == "Scrub Generation":
 
@@ -224,9 +271,9 @@ elif menu == "Scrub Generation":
         st.warning("Upload file first.")
 
 
-# -------------------------
+# ---------------------------------------------------
 # KiScore
-# -------------------------
+# ---------------------------------------------------
 
 elif menu == "KiScore":
 
@@ -235,7 +282,7 @@ elif menu == "KiScore":
         df = simulate_kiscore(st.session_state.data)
         st.session_state.data = df
 
-        st.write(df["KiScore_Band"].value_counts())
+        st.write(df["kiscore_band"].value_counts())
 
         st.download_button(
             "Download KiScore Results",
@@ -247,9 +294,9 @@ elif menu == "KiScore":
         st.warning("Upload file first.")
 
 
-# -------------------------
+# ---------------------------------------------------
 # Business Dashboard
-# -------------------------
+# ---------------------------------------------------
 
 elif menu == "Business Dashboard":
 
@@ -257,31 +304,34 @@ elif menu == "Business Dashboard":
 
         df = st.session_state.data
 
+        st.subheader("Filters")
+
         region_filter = st.multiselect("Region", df["region"].unique())
-        kiscore_filter = st.multiselect(
-            "KiScore Band",
-            df.get("KiScore_Band", pd.Series()).unique()
-        )
+
+        if "kiscore_band" in df.columns:
+            kiscore_filter = st.multiselect("KiScore Band", df["kiscore_band"].unique())
+        else:
+            kiscore_filter = []
 
         filtered_df = df.copy()
 
         if region_filter:
             filtered_df = filtered_df[filtered_df["region"].isin(region_filter)]
 
-        if "KiScore_Band" in df.columns and kiscore_filter:
-            filtered_df = filtered_df[filtered_df["KiScore_Band"].isin(kiscore_filter)]
+        if kiscore_filter:
+            filtered_df = filtered_df[filtered_df["kiscore_band"].isin(kiscore_filter)]
 
         col1, col2, col3 = st.columns(3)
 
         col1.metric("Total Loans", len(filtered_df))
-        col2.metric("Total Loan Amount", round(filtered_df["loan_amount"].sum(), 2))
 
-        if "kcpl_share_pct" in df.columns:
-            col3.metric(
-                "Avg KCPL Share %",
-                round(filtered_df["kcpl_share_pct"].mean(), 2)
-            )
+        if "loan_amount" in filtered_df.columns:
+            col2.metric("Total Loan Amount", round(filtered_df["loan_amount"].sum(), 2))
 
+        if "kcpl_share_pct" in filtered_df.columns:
+            col3.metric("Avg KCPL Share %", round(filtered_df["kcpl_share_pct"].mean(), 2))
+
+        st.subheader("Region Distribution")
         st.bar_chart(filtered_df["region"].value_counts())
 
         st.dataframe(filtered_df.head())
